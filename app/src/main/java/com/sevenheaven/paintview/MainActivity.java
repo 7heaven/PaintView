@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
         patternButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                paintView.randomPattern();
+                paintView.randomPattern(R.mipmap.ic_launcher);
             }
         });
 

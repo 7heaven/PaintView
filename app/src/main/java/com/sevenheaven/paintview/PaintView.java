@@ -7,11 +7,18 @@ import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PathMeasure;
+import android.graphics.Point;
+import android.graphics.PointF;
 import android.graphics.Rect;
-import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+
+import com.sevenheaven.paintview.actions.Action;
+import com.sevenheaven.paintview.actions.DrawPathAction;
+import com.sevenheaven.paintview.actions.PatternAction;
 
 import java.util.ArrayList;
 
@@ -24,88 +31,19 @@ public class PaintView extends View {
         CW, CCW;
     }
 
-    public enum DrawAction{
-        DrawLine, Pattern
-    }
-
-    public static class Action{
-
-        private DrawAction mDrawAction;
-
-        private Path path;
-        private int resName;
-        private Bitmap bitmap;
-        private int bitmapLeft;
-        private int bitmapTop;
-
-        private Matrix matrix;
-
-        private Drawable drawable;
-
-        public Action(DrawAction drawAction){
-            mDrawAction = drawAction;
-        }
-
-        public Action(DrawAction drawAction, Bitmap bitmap, int left, int top){
-            this(drawAction);
-            this.bitmap = bitmap;
-
-            this.bitmapLeft = left;
-            this.bitmapTop = top;
-        }
-
-        public Action(DrawAction drawAction, int resName){
-            this(drawAction);
-            this.resName = resName;
-        }
-
-        public Action(DrawAction drawAction, Drawable drawable){
-            this(drawAction);
-            this.drawable = drawable;
-        }
-
-        public Action(DrawAction drawAction, Path path){
-            this(drawAction);
-            this.path = path;
-        }
-
-        public void setMatrix(Matrix matrix){
-            if(this.matrix != null){
-                this.matrix.postConcat(matrix);
-            }else{
-                this.matrix = matrix;
-            }
-        }
-
-        public void drawOnCanvas(Canvas canvas, Paint paint){
-            int savedCount = 0;
-            if(matrix != null){
-                savedCount = canvas.save();
-                canvas.setMatrix(matrix);
-            }
-
-            switch(mDrawAction){
-                case DrawLine:
-                    if(path != null){
-                        canvas.drawPath(path, paint);
-                    }
-                    break;
-                case Pattern:
-                    if(resName != 0){
-                    }else if(drawable != null){
-                        drawable.draw(canvas);
-                    }else if(bitmap != null){
-                        canvas.drawBitmap(bitmap, bitmapLeft, bitmapTop, paint);
-                    }
-                    break;
-            }
-
-            if(savedCount > 0) canvas.restoreToCount(savedCount);
-        }
-    }
-
     private ArrayList<Action> mAllDrawActions;
     private Path mCurrentDrawingPath;
+    private Path mGuidingPath;
+
+    private PathMeasure mGuidingPathMeasure;
+
+    private float mStartPressure;
+    private float mEndPressure;
+    private float[] mGuidingMeasurePos = new float[2];
+    private float[] mGuidingMeasureTan = new float[2];
+    private static final double halfPI = Math.PI / 2D;
+    private static final float pressureScale = 6;
+    private float lastDistanceOfPath = 0;
 
     private Bitmap randomPattern;
 
@@ -142,9 +80,14 @@ public class PaintView extends View {
 
         mAllDrawActions = new ArrayList<Action>();
         mCurrentDrawingPath = new Path();
+        mGuidingPath = new Path();
+
+        mGuidingPathMeasure = new PathMeasure(mGuidingPath, false);
 
         mPaint.setStyle(Paint.Style.STROKE);
         mPaint.setStrokeWidth(5);
+        mPaint.setStrokeCap(Paint.Cap.ROUND);
+        mPaint.setStrokeJoin(Paint.Join.ROUND);
         mPaint.setColor(0xFF0099CC);
 
         drawingRect = new Rect();
@@ -170,17 +113,51 @@ public class PaintView extends View {
     public boolean onTouchEvent(MotionEvent event){
         switch(event.getAction()){
             case MotionEvent.ACTION_DOWN:
+                mStartPressure = event.getPressure();
+                mGuidingPath.reset();
+                mGuidingPath.moveTo(event.getX(), event.getY());
+
                 mCurrentDrawingPath.reset();
-                mCurrentDrawingPath.moveTo(event.getX(), event.getY());
+
+                int r = (int) (Math.random() * 255);
+                int g = (int) (Math.random() * 255);
+                int b = (int) (Math.random() * 255);
+
+                mPaint.setColor(0xFF000000 | r << 16 | g << 8 | b);
                 break;
             case MotionEvent.ACTION_MOVE:
-                mCurrentDrawingPath.lineTo(event.getX(), event.getY());
+                mEndPressure = event.getPressure();
+                mGuidingPath.lineTo(event.getX(), event.getY());
+                mGuidingPathMeasure.setPath(mGuidingPath, false);
+
+                mGuidingPathMeasure.getPosTan(lastDistanceOfPath, mGuidingMeasurePos, mGuidingMeasureTan);
+                double angle = Math.atan2(mGuidingMeasureTan[1], mGuidingMeasureTan[0]);
+                PointF center = new PointF(mGuidingMeasurePos[0], mGuidingMeasurePos[1]);
+                PointF leftTopPoint = centerRadiusPoint(center, angle - halfPI, mStartPressure * pressureScale);
+                PointF leftBottomPoint = centerRadiusPoint(center, angle + halfPI, mStartPressure * pressureScale);
+
+                mGuidingPathMeasure.getPosTan(mGuidingPathMeasure.getLength(), mGuidingMeasurePos, mGuidingMeasureTan);
+                angle = Math.atan2(mGuidingMeasureTan[1], mGuidingMeasureTan[0]);
+                center = new PointF(mGuidingMeasurePos[0], mGuidingMeasurePos[1]);
+                PointF rightTopPoint = centerRadiusPoint(center, angle - halfPI, mEndPressure * pressureScale);
+                PointF rightBottomPoint = centerRadiusPoint(center, angle + halfPI, mEndPressure * pressureScale);
+
+                mCurrentDrawingPath.moveTo(leftTopPoint.x, leftTopPoint.y);
+                mCurrentDrawingPath.lineTo(leftBottomPoint.x, leftBottomPoint.y);
+                mCurrentDrawingPath.lineTo(rightBottomPoint.x, rightBottomPoint.y);
+                mCurrentDrawingPath.lineTo(rightTopPoint.x, rightTopPoint.y);
+                mCurrentDrawingPath.close();
+
+                mStartPressure = event.getPressure();
+                lastDistanceOfPath = mGuidingPathMeasure.getLength();
+
                 break;
             case MotionEvent.ACTION_UP:
                 mDrawingCanvas.drawPath(mCurrentDrawingPath, mPaint);
 
-                mAllDrawActions.add(new Action(DrawAction.DrawLine, new Path(mCurrentDrawingPath)));
+                mAllDrawActions.add(new DrawPathAction(new Path(mCurrentDrawingPath), new Paint(mPaint)));
 
+                mGuidingPath.reset();
                 mCurrentDrawingPath.reset();
                 break;
         }
@@ -228,11 +205,16 @@ public class PaintView extends View {
                 break;
         }
 
-        matrix.postRotate(mCurrentRotateAngle, mDrawingCanvas.getWidth() / 2, mDrawingCanvas.getHeight() / 2);
+        Log.w("rotate", ":" + mCurrentRotateAngle);
 
-        for(Action action : mAllDrawActions){
-            action.setMatrix(new Matrix(matrix));
-        }
+        matrix.setRotate(mCurrentRotateAngle, mDrawingCanvas.getWidth() / 2, mDrawingCanvas.getHeight() / 2);
+
+//        for(Action action : mAllDrawActions){
+//            action.setMatrix(new Matrix(matrix));
+//        }
+
+        mDrawingCanvas.save();
+        mDrawingCanvas.setMatrix(matrix);
 
         drawingRect.left = 0;
         drawingRect.top = 0;
@@ -250,6 +232,8 @@ public class PaintView extends View {
             mAllDrawActions.get(i).drawOnCanvas(mDrawingCanvas, mPaint);
         }
 
+        mDrawingCanvas.restore();
+
         invalidate();
     }
 
@@ -263,7 +247,9 @@ public class PaintView extends View {
 
         mDrawingCanvas.drawBitmap(randomPattern, left, top, mPaint);
 
-        mAllDrawActions.add(new Action(DrawAction.Pattern, randomPattern, left, top));
+        mAllDrawActions.add(new PatternAction(randomPattern, new Rect(left, top, left + randomPattern.getWidth(), top + randomPattern.getHeight())));
+
+        invalidate();
     }
 
     @Override
@@ -272,5 +258,12 @@ public class PaintView extends View {
 
         canvas.drawBitmap(mDrawingBitmap, mCenterX - cachedBitmapHWidth, mCenterY - cachedBitmapHHeight, mPaint);
         canvas.drawPath(mCurrentDrawingPath, mPaint);
+    }
+
+    private PointF centerRadiusPoint(PointF center, double angle, float radius){
+        float x = (float) (radius * Math.cos(angle) + center.x);
+        float y = (float) (radius * Math.sin(angle) + center.y);
+
+        return new PointF(x, y);
     }
 }

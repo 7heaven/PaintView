@@ -1,10 +1,12 @@
-package com.sevenheaven.paintview.actions;
+package com.sevenheaven.painter.actions;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 
 /**
+ * Represent a path drawing action
+ *
  * Created by 7heaven on 16/3/9.
  */
 public class DrawPathAction extends Action {
@@ -26,5 +28,21 @@ public class DrawPathAction extends Action {
         if(this.mPath != null){
             canvas.drawPath(this.mPath, this.mPaint != null ? mPaint : paint);
         }
+    }
+
+    public void setPath(Path path){
+        this.mPath = path;
+    }
+
+    public Path getPath(){
+        return this.mPath;
+    }
+
+    public void setPaint(Paint paint){
+        this.mPaint = paint;
+    }
+
+    public Paint getPaint(){
+        return mPaint;
     }
 }

@@ -1,4 +1,4 @@
-package com.sevenheaven.paintview;
+package com.sevenheaven.painter;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -8,18 +8,18 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PathMeasure;
-import android.graphics.Point;
+import android.graphics.Picture;
 import android.graphics.PointF;
 import android.graphics.Rect;
-import android.support.annotation.DrawableRes;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
 
-import com.sevenheaven.paintview.actions.Action;
-import com.sevenheaven.paintview.actions.DrawPathAction;
-import com.sevenheaven.paintview.actions.PatternAction;
+import com.sevenheaven.painter.actions.Action;
+import com.sevenheaven.painter.actions.DrawPathAction;
+import com.sevenheaven.painter.actions.PatternAction;
+import com.sevenheaven.painter.actions.PictureAction;
 
 import java.util.ArrayList;
 
@@ -29,13 +29,16 @@ import java.util.ArrayList;
 public class PaintView extends View {
 
     public enum Rotate{
-        CW, CCW;
+        CW, CCW
     }
 
     private ArrayList<Action> mAllDrawActions;
     private Path mCurrentDrawingPath;
     private Path mGuidingPath;
     private Path mCurrentMovePath;
+
+    private Action mCurrentMoveAction;
+    private Picture mRecordedPicture;
 
     private PathMeasure mGuidingPathMeasure;
 
@@ -86,6 +89,9 @@ public class PaintView extends View {
         mGuidingPath = new Path();
         mCurrentMovePath = new Path();
 
+//        mCurrentMoveAction = new DrawPathAction(mCurrentMovePath, mPaint);
+        mCurrentMoveAction = new PictureAction(mRecordedPicture);
+
         mGuidingPathMeasure = new PathMeasure(mGuidingPath, false);
 
         mPaint.setStyle(Paint.Style.FILL);
@@ -125,6 +131,7 @@ public class PaintView extends View {
                 mCurrentDrawingPath.reset();
                 mCurrentMovePath.reset();
                 isFirstDown = true;
+                mRecordedPicture.beginRecording(getWidth(), getHeight());
 
                 int r = (int) (Math.random() * 255);
                 int g = (int) (Math.random() * 255);
@@ -218,8 +225,11 @@ public class PaintView extends View {
                 mStartPressure = mEndPressure;
                 lastDistanceOfPath = mGuidingPathMeasure.getLength();
 
+                mRecordedPicture.endRecording();
+
                 if(event.getAction() == MotionEvent.ACTION_UP || event.getAction() == MotionEvent.ACTION_CANCEL){
-                    mAllDrawActions.add(new DrawPathAction(new Path(mCurrentDrawingPath), new Paint(mPaint)));
+//                    mAllDrawActions.add(new DrawPathAction(new Path(mCurrentDrawingPath), new Paint(mPaint)));
+                    mAllDrawActions.add(new PictureAction(new Picture(mRecordedPicture)));
 
                     mGuidingPath.reset();
                     mCurrentMovePath.reset();
@@ -273,10 +283,6 @@ public class PaintView extends View {
 
         matrix.setRotate(mCurrentRotateAngle, mDrawingCanvas.getWidth() / 2, mDrawingCanvas.getHeight() / 2);
 
-//        for(Action action : mAllDrawActions){
-//            action.setMatrix(new Matrix(matrix));
-//        }
-
         mDrawingCanvas.save();
         mDrawingCanvas.setMatrix(matrix);
 
@@ -303,9 +309,6 @@ public class PaintView extends View {
     }
 
     public void randomPattern(Bitmap pattern){
-        if(randomPattern == null){
-            randomPattern = BitmapFactory.decodeResource(getContext().getResources(), R.mipmap.ic_launcher);
-        }
 
         int left = (int) (Math.random() * mDrawingBitmap.getWidth());
         int top = (int) (Math.random() * mDrawingBitmap.getHeight());
@@ -322,7 +325,7 @@ public class PaintView extends View {
         super.onDraw(canvas);
 
         canvas.drawBitmap(mDrawingBitmap, mCenterX - cachedBitmapHWidth, mCenterY - cachedBitmapHHeight, mPaint);
-        canvas.drawPath(mCurrentMovePath, mPaint);
+        mCurrentMoveAction.drawOnCanvas(canvas, mPaint);
     }
 
     private PointF centerRadiusPoint(PointF center, double angle, double radius){

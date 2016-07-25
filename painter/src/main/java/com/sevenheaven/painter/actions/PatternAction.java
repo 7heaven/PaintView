@@ -1,4 +1,4 @@
-package com.sevenheaven.paintview.actions;
+package com.sevenheaven.painter.actions;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
